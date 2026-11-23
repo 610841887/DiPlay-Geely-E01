@@ -172,6 +172,7 @@ adb install -r DiPlay-Legacy-Geely-V050.apk
 
 - [0.5.0 发版说明](docs/release-notes/v0.5.0-geely.md)
 - [完整更新日志](CHANGELOG.md)
+- [E01 上游更新记录](docs/UPSTREAM_SYNC.md)
 - [0.4.9 发版说明](docs/release-notes/v0.4.9-geely.md)
 - [0.4.6 发版说明](docs/release-notes/v0.4.6-geely.md)
 - [0.4.5 发版说明](docs/release-notes/v0.4.5-geely.md)

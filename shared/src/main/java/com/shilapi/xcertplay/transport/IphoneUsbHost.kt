@@ -440,8 +440,7 @@ class Iap2UsbSession internal constructor(
             val completed = try {
                 awaitUsbRequest(connection, request, buffer, timeoutMillis)
             } catch (_: TimeoutException) {
-                drainCancelledRead(request)
-                return@synchronized null
+                return@synchronized drainTimedOutRead(request, buffer)
             }
             if (completed == null) {
                 throw failSession("Android returned no USBMUX read request")
@@ -485,22 +484,29 @@ class Iap2UsbSession internal constructor(
         if (closed) throw IphoneUsbException.DeviceUnavailable("USBMUX session is closed")
     }
 
-    private fun drainCancelledRead(request: UsbRequest) {
+    private fun drainTimedOutRead(request: UsbRequest, buffer: ByteBuffer): ByteArray? {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
             // The deadline timer in awaitUsbRequest cancelled this request, and the wait that
             // reported the timeout consumed it. Nothing is left queued to drain.
-            return
+            return null
         }
-        if (!request.cancel()) {
-            throw failSession("Android could not cancel timed out USBMUX read request")
-        }
+        // A completion can race the timeout; cancel() then returns false even though bytes arrived.
+        val cancelled = request.cancel()
         val completed = try {
             waitForUsbRequest(connection, CANCEL_DRAIN_TIMEOUT_MILLIS)
         } catch (_: TimeoutException) {
-            throw failSession("Timed out draining cancelled USBMUX read request")
+            throw failSession(
+                if (cancelled) "Timed out draining cancelled USBMUX read request"
+                else "Android could not cancel timed out USBMUX read request",
+            )
         }
         if (completed !== request) {
             throw failSession("Android did not drain the cancelled USBMUX read request")
+        }
+        if (buffer.position() == 0) return null
+        return ByteArray(buffer.position()).also {
+            buffer.flip()
+            buffer.get(it)
         }
     }
 

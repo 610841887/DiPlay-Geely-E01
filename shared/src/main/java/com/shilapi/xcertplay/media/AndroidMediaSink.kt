@@ -365,6 +365,7 @@ private class VideoDecoder(
     private var firstFrameMarked = false
     private var firstInputMarked = false
     private var duplicateConfigLogged = false
+    private var surfaceInvalidLogged = false
     private val referenceChain = VideoReferenceChain()
     private var lastKeyFrameRequestNs = 0L
     // The main screen keeps the historical log format; other screens are labelled.
@@ -433,6 +434,17 @@ private class VideoDecoder(
     private fun configureDecoder(config: VideoJob.Config): Boolean {
         val mime = if (config.codec == VideoCodec.H265) MediaFormat.MIMETYPE_VIDEO_HEVC
         else MediaFormat.MIMETYPE_VIDEO_AVC
+        if (outputSurface?.isValid == false) {
+            lastConfig = config
+            releaseDecoder()
+            referenceChain.reset()
+            if (!surfaceInvalidLogged) {
+                surfaceInvalidLogged = true
+                report("decoder surface invalid; waiting for a live surface")
+            }
+            return false
+        }
+        surfaceInvalidLogged = false
         val previous = lastConfig
         if (
             decoder != null &&
@@ -446,7 +458,7 @@ private class VideoDecoder(
             // The decoder is up, which is exactly what this diagnostic reports. Saying nothing here
             // starved a caller that gates on it: it waited out its whole timeout for a decoder it
             // already had, and the only evidence was a log line it never reads.
-            report("decoder=${decoder?.name} mime=$mime size=${width}x$height")
+            report("decoder=${decoder?.safeName()} mime=$mime size=${width}x$height")
             return true
         }
         lastConfig = config
@@ -459,26 +471,27 @@ private class VideoDecoder(
         }
         val codec = config.codec
         val codecData = config.codecData
-        val format = MediaFormat.createVideoFormat(mime, width, height).apply {
-            setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, MAX_INPUT_SIZE)
-            setInteger(MediaFormat.KEY_PRIORITY, 0)
-        }
-        if (codec == VideoCodec.H265) {
-            val csd = MediaCodecSupport.hevcCodecSpecificData(codecData)
-            if (csd.isNotEmpty()) format.setByteBuffer("csd-0", ByteBuffer.wrap(csd))
-        } else {
-            val (sps, pps) = MediaCodecSupport.avcParameterSets(codecData)
-            if (sps.isNotEmpty()) format.setByteBuffer("csd-0", ByteBuffer.wrap(START_CODE + sps))
-            if (pps.isNotEmpty()) format.setByteBuffer("csd-1", ByteBuffer.wrap(START_CODE + pps))
-        }
         var candidate: MediaCodec? = null
         val next = try {
             createDecoder(mime).also {
                 candidate = it
+                val name = it.safeName()
+                val format = videoDecoderFormat(mime, width, height, name, Build.VERSION.SDK_INT)
+                if (codec == VideoCodec.H265) {
+                    val csd = MediaCodecSupport.hevcCodecSpecificData(codecData)
+                    if (csd.isNotEmpty()) format.setByteBuffer("csd-0", ByteBuffer.wrap(csd))
+                } else {
+                    val (sps, pps) = MediaCodecSupport.avcParameterSets(codecData)
+                    if (sps.isNotEmpty()) format.setByteBuffer("csd-0", ByteBuffer.wrap(START_CODE + sps))
+                    if (pps.isNotEmpty()) format.setByteBuffer("csd-1", ByteBuffer.wrap(START_CODE + pps))
+                }
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
                     it.codecInfo.getCapabilitiesForType(mime).isFeatureSupported("low-latency")) {
                     format.setInteger(MediaFormat.KEY_LOW_LATENCY, 1)
                 }
+                report("decoder configuring name=$name " +
+                    "nativePortSizing=${needsNativePortSizing(name, Build.VERSION.SDK_INT)} " +
+                    "mime=$mime size=${width}x$height")
                 it.configure(format, surface, null, 0)
                 it.start()
             }
@@ -492,10 +505,10 @@ private class VideoDecoder(
         renderedFrameLogged = false
         submittedFrameLogged = false
         if (next != null) {
-            report("decoder=${next.name} mime=$mime size=${width}x$height")
+            report("decoder=${next.safeName()} mime=$mime size=${width}x$height")
             DiagLog.i(
                 TAG,
-                "video decoder configured name=${next.name} mime=$mime size=${width}x$height",
+                "video decoder configured name=${next.safeName()} mime=$mime size=${width}x$height",
             )
         }
         return next != null
@@ -521,7 +534,13 @@ private class VideoDecoder(
     }
 
     private fun changeSurface(surface: Surface?, applied: (Boolean) -> Unit) {
-        if (outputSurface === surface) {
+        if (surface?.isValid == false) {
+            outputSurface = surface
+            releaseDecoder()
+            applied(false)
+            return
+        }
+        if (outputSurface === surface && (surface == null || decoder != null)) {
             applied(true)
             return
         }
@@ -701,12 +720,30 @@ private class VideoDecoder(
 
     private companion object {
         const val TAG = "xcertplay-usb"
-        const val MAX_INPUT_SIZE = 8 * 1024 * 1024
         const val INPUT_TIMEOUT_US = 10_000L
         const val MAX_FRAME_AGE_NS = 250_000_000L
         val START_CODE = byteArrayOf(0x00, 0x00, 0x00, 0x01)
     }
 }
+
+/** Old ACodec aborts natively if a forced input size exceeds the OMX port capacity. */
+internal fun needsNativePortSizing(decoderName: String?, sdkInt: Int): Boolean =
+    sdkInt <= Build.VERSION_CODES.LOLLIPOP_MR1 ||
+        decoderName?.startsWith("OMX.k3.video.decoder", ignoreCase = true) == true
+
+internal fun videoDecoderFormat(
+    mime: String, width: Int, height: Int, decoderName: String?, sdkInt: Int,
+): MediaFormat = MediaFormat.createVideoFormat(mime, width, height).apply {
+    if (!needsNativePortSizing(decoderName, sdkInt)) {
+        setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 8 * 1024 * 1024)
+        setInteger(MediaFormat.KEY_PRIORITY, 0)
+    }
+}
+
+private fun MediaCodec.safeName(): String =
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2) {
+        runCatching { name }.getOrDefault("unknown")
+    } else "unknown"
 
 private fun MediaFormat.intOrNull(key: String): Int? =
     if (!containsKey(key)) {
@@ -1136,7 +1173,10 @@ private class AudioRenderer(
 
     private fun feedCodec(payload: ByteArray, presentationTimeUs: Long) {
         val codec = codec ?: return
-        val index = codec.dequeueInputBuffer(INPUT_TIMEOUT_US)
+        val index = VideoInputPump.acquire(
+            running = { running }, drain = { drainCodec(codec) },
+            dequeue = { codec.dequeueInputBuffer(INPUT_TIMEOUT_US) },
+        )
         if (index < 0) {
             inputDropped++
             if (inputDropped == 1) {
@@ -1511,7 +1551,7 @@ private class AudioRenderer(
     private companion object {
         const val TAG = "xcertplay-usb"
         const val AAC_OBJECT_TYPE_LC = 2
-        const val MIN_OPUS_PACKET_BYTES = 4
+        const val MIN_OPUS_PACKET_BYTES = 1
         const val OPUS_CODEC_DELAY_NANOS = 6_500_000L
         const val OPUS_SEEK_PRE_ROLL_NANOS = 80_000_000L
         const val INPUT_TIMEOUT_US = 10_000L

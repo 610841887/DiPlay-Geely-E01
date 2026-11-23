@@ -11,6 +11,23 @@ alignment line, not the base line, is what says how current a release is.
 
 ---
 
+## Unreleased — E01 upstream compatibility backports
+
+Selected fixes from [DiPlay-Legacy-Android](https://gitee.com/JingRuirui/DiPlay-Legacy-Android),
+inspected through `f40ae15a` (2026-11-23). This is a selective backport, not a full upstream merge.
+
+- Android 5.1 and older: keep the video decoder's native input-port sizing instead of forcing
+  an 8 MB buffer that can cause an uncatchable native abort.
+- Wait for a valid video surface after it is destroyed; reject an invalid surface handoff.
+- Drain decoded audio while waiting for input space, and accept short, non-empty Opus packets.
+- Preserve USBMUX data that completes between a read timeout and cancellation on Android 8+.
+- Use the API 19-compatible NDK r25c in CI, matching the source build and build documentation.
+
+The E01 cockpit, factory Bluetooth route and single-decoder cluster mirror remain the baseline.
+See [upstream integration notes](docs/UPSTREAM_SYNC.md) for source commits and deferred features.
+
+---
+
 ## 0.5.0-geely — 2026-11-09
 
 **仪表音乐卡片显示更稳、连接重试更完整、无线音乐缓冲更宽。**
