@@ -6,6 +6,9 @@ DiPlay is a modified version of [xcertplay by shilapi](https://github.com/shilap
 
 Upstream credits [LIVI](https://github.com/f-io/LIVI) and [Showcase](https://github.com/amineross/showcase) for protocol research. Existing source comments and attribution are preserved.
 
+The AAP and CarLife receiver implementations and protocol tests come from
+[DiPlay-Legacy-Android](https://gitee.com/JingRuirui/DiPlay-Legacy-Android) under GPL-3.0.
+
 ## Home and settings UI
 
 `common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt` adapts the palette, visual arrangement and interface copy of the [DiAuto project](https://github.com/shihabal3amri/DiAuto). DiAuto's source is licensed under AGPL version 3. The UI file is marked AGPL-3.0-only; its license text is included in `docs/licenses/DiAuto-AGPL-3.0.txt`.

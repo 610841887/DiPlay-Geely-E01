@@ -769,6 +769,7 @@ class DiPlayActivity : ComponentActivity() {
             },
             buildConnectionSection = { col ->
                 val columns = CardColumns(col)
+                androidProjectionCard(columns)
                 val readiness = pageState().readiness
                 if (!hasWirelessRadio()) {
                     columns.line(
@@ -1528,6 +1529,61 @@ class DiPlayActivity : ComponentActivity() {
         }
     }
 
+    private var openingAndroidProjection = false
+
+    private fun androidProjectionCard(columns: CardColumns) {
+        columns.card(R.string.settings_android_projection) { card ->
+            card.addView(button(getString(R.string.aa_desktop_title), false) {
+                openAndroidProjection(AndroidAutoActivity.intentForUsb(this))
+            }, matchButton(0, 56))
+            card.addView(button(getString(R.string.carlife_waiting_title), false) {
+                openAndroidProjection(com.shilapi.xcertplay.carlife.CarLifeActivity.intentForWireless(this))
+            }, matchButton(8, 56))
+        }
+    }
+
+    private fun openAndroidProjection(target: Intent) {
+        if (openingAndroidProjection) return
+        if (AndroidProjectionSession.owner != null) {
+            toast(getString(R.string.android_projection_busy))
+            return
+        }
+        val launch = {
+            openingAndroidProjection = true
+            CarPlayBackgroundSession.stop {
+                runOnUiThread {
+                    val adapter = adapterPage.also { adapterPage = null }
+                    val open = {
+                        openingAndroidProjection = false
+                        if (!isFinishing && !isDestroyed &&
+                            lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)
+                        ) startActivity(target)
+                    }
+                    if (adapter == null) {
+                        open()
+                    } else {
+                        Thread({
+                            try {
+                                adapter.releaseAndWait()
+                            } finally {
+                                runOnUiThread { open() }
+                            }
+                        }, "adapter-release").apply { isDaemon = true }.start()
+                    }
+                }
+            }
+        }
+        if (CarPlayBackgroundSession.hasSession()) {
+            AlertDialog.Builder(this)
+                .setMessage(R.string.android_projection_disconnect_carplay)
+                .setNegativeButton(android.R.string.cancel, null)
+                .setPositiveButton(android.R.string.ok) { _, _ -> launch() }
+                .show()
+        } else {
+            launch()
+        }
+    }
+
     /**
      * The Bluetooth radio, the adapter's startup step, and the iPhone — all on the card. Choosing any of
      * them used to open a dialog that had to be dismissed before the next step was readable, which is why
@@ -2063,7 +2119,9 @@ class DiPlayActivity : ComponentActivity() {
     @Volatile private var connectAfterSync = false
 
     private fun requestWirelessSync(reason: WirelessSyncReason) {
-        if (sessionBlocksRadioChange(CarPlayBackgroundSession.hasSession())) return
+        if (AndroidProjectionSession.owner != null ||
+            sessionBlocksRadioChange(CarPlayBackgroundSession.hasSession())
+        ) return
         val wirelessEnabled = AirPlayPersistence.loadWirelessEnabled(applicationContext)
         val mode = AirPlayPersistence.loadWirelessHotspotMode(applicationContext)
         val target = wirelessRadioTarget(wirelessEnabled, mode)
@@ -2132,8 +2190,12 @@ class DiPlayActivity : ComponentActivity() {
         val stationOn = controller.isStationFullyOn()
         val stationOff = controller.isStationFullyOff()
         val target = wirelessRadioTarget(wirelessEnabled, mode)
-        val still = { syncRequestStillCurrent(generation, wirelessSyncGeneration.get()) }
-        if (sessionBlocksRadioChange(CarPlayBackgroundSession.hasSession()) ||
+        val still = {
+            AndroidProjectionSession.owner == null &&
+                syncRequestStillCurrent(generation, wirelessSyncGeneration.get())
+        }
+        if (AndroidProjectionSession.owner != null ||
+            sessionBlocksRadioChange(CarPlayBackgroundSession.hasSession()) ||
             cooldownBlocks(reason, bypass, coolingDown)
         ) {
             DiagLog.i(TAG_CAR_HOTSPOT, "sync skipped reason=$reason target=$target gen=$generation")
@@ -2690,6 +2752,10 @@ class DiPlayActivity : ComponentActivity() {
     }
 
     private fun connect(wireless: Boolean) {
+        if (AndroidProjectionSession.owner != null || openingAndroidProjection) {
+            toast(getString(R.string.android_projection_busy))
+            return
+        }
         // A session must not start while the hop is changing the head unit: it would be built on a
         // socket that is about to move, and the operation would unwind underneath it. Checked before
         // anything else, because none of the gaps below are the reason to refuse this time.
@@ -2928,6 +2994,10 @@ class DiPlayActivity : ComponentActivity() {
     }
 
     private fun openProjection() {
+        if (AndroidProjectionSession.owner != null || openingAndroidProjection) {
+            toast(getString(R.string.android_projection_busy))
+            return
+        }
         startActivity(Intent(this, CarPlayHostActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT))
     }
 

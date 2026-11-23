@@ -40,6 +40,21 @@
         <service android:name="com.shilapi.xcertplay.DiPlaySessionService"
             android:exported="false" android:foregroundServiceType="connectedDevice|microphone" />
 
+        <activity
+            android:name="com.shilapi.xcertplay.AndroidAutoActivity"
+            android:configChanges="density|keyboardHidden|orientation|screenLayout|screenSize|smallestScreenSize|uiMode"
+            android:exported="false"
+            android:launchMode="singleTop"
+            android:screenOrientation="landscape"
+            android:theme="@style/Theme.Xcertplay" />
+        <activity
+            android:name="com.shilapi.xcertplay.carlife.CarLifeActivity"
+            android:configChanges="density|keyboardHidden|orientation|screenLayout|screenSize|smallestScreenSize|uiMode"
+            android:exported="false"
+            android:launchMode="singleTop"
+            android:screenOrientation="landscape"
+            android:theme="@style/Theme.Xcertplay" />
+
         <!-- Off until the driver switches it on. -->
         <service
             android:name="com.shilapi.xcertplay.UsbAutoConfirmService"

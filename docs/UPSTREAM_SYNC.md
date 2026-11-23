@@ -19,11 +19,15 @@
 
 没有导入上游的 AutoChips AC83xx 软件解码优先策略：E01 的 MT6735 不属于该芯片平台。
 
-## 后续独立适配项
+## Android Auto 与 CarLife
 
-上游的通用界面、Android Auto、CarLife、BYD HUD/仪表和新增蓝牙栈依赖不能直接覆盖 E01 实现。
-这些功能不在本批移植范围内；特别是新增多协议入口还需要与 E01 座舱、音频焦点和厂商蓝牙的生命周期对接。
-外置适配器源码仍按本分支的外部构建输入约定提供，不重新引入公开源码树排除的依赖。
+从上游 [`320875d0`](https://gitee.com/JingRuirui/DiPlay-Legacy-Android/commit/320875d00fcbd0631c669daeddd9ed9bb11e85d1) 的 Android 互联模块回移植。入口在 E01 座舱的「设置 → 连接 → 安卓手机投屏」。切换时如有 CarPlay 会话，确认断开后才进入新模式。CarPlay 继续使用 E01 厂商蓝牙和现有仪表链路。
+
+- **Android Auto** 使用上游 AAP 接收器。手机运行 [AARE](https://github.com/prototux/AARE) 时，可以用数据线连接并允许 USB 访问，也可以启用 AARE 的网络接入，在同一 Wi-Fi 下填写手机 IP。车机首次使用时生成并保存自己的接收端证书，Android 5.1 使用构建已包含的 Conscrypt 处理 TLS。
+- **百度 CarLife** 使用上游 Wi-Fi 投屏协议。车机和手机加入同一 Wi-Fi 或热点，在手机打开 CarLife+ 并允许投屏。车机会自动查找手机，搜索超时可填写手机 IP。
+- 两种模式都可以通过投屏工具条返回 DiPlay。Android Auto 的工具条入口在画面底部，CarLife 在顶部。
+
+上游通用界面、BYD HUD 和独立蓝牙栈仍是另外的适配范围。外置适配器源码继续使用本分支的外部构建输入。
 
 后续继续从这里记录的快照审查差异，不使用 `merge -s ours` 将未移植功能标记为已合并。
 
@@ -40,5 +44,8 @@ Robolectric 4.17 的沙箱从 API 23 起支持；API 22 缓冲区策略通过显
 
 2026-11-23 在 macOS 上运行上述检查：`shared` 625 项（1 项跳过）、`common` 567 项，0 失败；
 lint 与调试构建通过。公开源码检查通过。
+
+Android 互联回移植后，`shared` 712 项（1 项跳过）、`common` 567 项，0 失败；lint 与调试构建通过。
+在 1920×720 的 Android 5.1 ARM64 模拟器上，从座舱入口按手机 IP 连接模拟手机，检查两种模式的 TCP 握手、H.264 出画、触摸回传和返回座舱。实车 USB 授权、真实手机互通、硬件解码和音频需要实测。
 
 构建仍默认生成不含配件身份、厂商蓝牙载荷和签名的源码测试包，实车包的构建输入见 [BUILD.md](BUILD.md)。

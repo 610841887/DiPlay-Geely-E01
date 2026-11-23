@@ -11,11 +11,15 @@ alignment line, not the base line, is what says how current a release is.
 
 ---
 
-## Unreleased — E01 upstream compatibility backports
+## Unreleased — Android phone projection and E01 compatibility
 
 Selected fixes from [DiPlay-Legacy-Android](https://gitee.com/JingRuirui/DiPlay-Legacy-Android),
 inspected through `f40ae15a` (2026-11-23). This is a selective backport, not a full upstream merge.
 
+- Add Android Auto via AARE over USB or a local Wi-Fi connection, with a head-unit certificate
+  generated on the device.
+- Add Baidu CarLife Wi-Fi projection with phone discovery and manual IP entry.
+- Add both modes to the Connection tab in the E01 cockpit and release CarPlay before switching.
 - Android 5.1 and older: keep the video decoder's native input-port sizing instead of forcing
   an 8 MB buffer that can cause an uncatchable native abort.
 - Wait for a valid video surface after it is destroyed; reject an invalid surface handoff.
@@ -24,7 +28,7 @@ inspected through `f40ae15a` (2026-11-23). This is a selective backport, not a f
 - Use the API 19-compatible NDK r25c in CI, matching the source build and build documentation.
 
 The E01 cockpit, factory Bluetooth route and single-decoder cluster mirror remain the baseline.
-See [upstream integration notes](docs/UPSTREAM_SYNC.md) for source commits and deferred features.
+See [upstream integration notes](docs/UPSTREAM_SYNC.md) for source commits and test coverage.
 
 ---
 
